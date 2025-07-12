@@ -1,5 +1,12 @@
 streamlit
-python-dotenv
 pandas
-langchain-google-genai
+python-dotenv
+google-generativeai
 langchain
+langchain-google-genai
+streamlit 
+pandas 
+python-dotenv 
+google-generativeai 
+langchain 
+langchain-google-genai 
