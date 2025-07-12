@@ -1,48 +1,41 @@
+import os
 import streamlit as st
 import pandas as pd
-import google.generativeai as genai
-import os
 from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.chains import AnalyzeDocumentChain
 
+# Load environment variables
 load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
-genai.configure(api_key=api_key)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Gemini model
-model = genai.GenerativeModel("gemini-pro")
+# Initialize Gemini Pro LLM from LangChain
+llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=GOOGLE_API_KEY)
+qa_chain = AnalyzeDocumentChain(combine_docs_chain=llm)
 
-# App layout
-st.set_page_config(page_title="Swift Figures - AI Bookkeeping Insights", layout="centered")
-st.markdown("## 📊 Swift Figures - AI Bookkeeping Insights Agent")
-st.markdown("Upload your bookkeeping CSV file to generate instant insights.")
+# Streamlit UI
+st.set_page_config(page_title="AI Bookkeeping Insights", page_icon=":bar_chart:")
+st.markdown("<h1 style='text-align: center;'>📊 Swift Figures – AI Bookkeeping Insights Agent</h1>", unsafe_allow_html=True)
+st.write("Upload your CSV file")
 
-uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
+uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    st.markdown("### 🔍 Preview of Uploaded Data")
-    st.dataframe(df)
+if uploaded_file:
+    try:
+        df = pd.read_csv(uploaded_file)
 
-    # Format CSV as text
-    csv_text = df.to_csv(index=False)
+        # Display DataFrame preview
+        st.subheader("📄 CSV Preview")
+        st.dataframe(df.head(10))
 
-    with st.spinner("Generating insights..."):
-        prompt = f"""You are a financial analysis assistant. Analyze the following bookkeeping data in CSV format and provide:
-        1. Summary of the period covered, revenue, expenses, and net income
-        2. Any anomalies, dependencies, or missing info
-        3. Suggested questions for the business owner
+        # Convert CSV to plain text for LLM input
+        csv_text = df.to_csv(index=False)
 
-        Here is the CSV data:
-        {csv_text}
-        """
+        with st.spinner("Analyzing with AI..."):
+            response = qa_chain.run(csv_text)
 
-        response = model.generate_content(prompt)
-        insights = response.text
+        st.subheader("🧠 AI Insights")
+        st.success(response)
 
-    st.markdown("### 📌 Key Insights")
-    st.markdown(insights)
-
-    # Optional download or feedback
-    st.divider()
-    st.markdown("✅ **Done reviewing?**")
-    st.download_button("Download Raw CSV", csv_text, file_name="uploaded_data.csv")
+    except Exception as e:
+        st.error(f"Something went wrong: {e}")
