@@ -1,4 +1,6 @@
 streamlit
-python-dotenv
 pandas
-google-generativeai
+python-dotenv
+google-generativeai        # Google's official Gemini Python SDK
+langchain                  # core LangChain
+langchain-google-genai     # LangChain ↔ Gemini integration
