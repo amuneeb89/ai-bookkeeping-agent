@@ -1,12 +1,5 @@
-streamlit
+fastapi
+uvicorn[standard]
 pandas
-python-dotenv
+python-multipart
 google-generativeai
-langchain
-langchain-google-genai
-streamlit 
-pandas 
-python-dotenv 
-google-generativeai 
-langchain 
-langchain-google-genai 
