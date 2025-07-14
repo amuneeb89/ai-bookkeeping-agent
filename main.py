@@ -1,35 +1,30 @@
-import os
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
 import pandas as pd
+import io
+import os
 import google.generativeai as genai
-from dotenv import load_dotenv
 
-# Load API key from .env
-load_dotenv()
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+# Load Gemini API Key from environment variable
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Load CSV
-def load_csv(file_path):
-    df = pd.read_csv(file_path)
-    print("✅ CSV loaded successfully.")
-    return df
+# ✅ This must exist!
+app = FastAPI()
 
-# Generate insights
-def get_insights(prompt):
-    model = genai.GenerativeModel("gemini-1.5-pro")  # ✅ Correct model
-    response = model.generate_content([prompt])  # ✅ Prompt must be a list
-    return response.text
+@app.post("/analyze")
+async def analyze(file: UploadFile = File(...)):
+    contents = await file.read()
+    df = pd.read_csv(io.BytesIO(contents))
 
-# Main execution
-if __name__ == "__main__":
-    csv_file = "data/input.csv"
-    df = load_csv(csv_file)
+    # Simple analysis
+    top_expenses = df.groupby("Category")["Amount"].sum().sort_values(ascending=False).head(3)
+    summary = "\n".join([f"{k}: ${v:.2f}" for k, v in top_expenses.items()])
 
-    prompt = (
-        "You are a bookkeeping assistant. Provide insights from this financial data:\n\n"
-        + df.head(10).to_string()
-    )
+    # Use Gemini to generate insights
+    model = genai.GenerativeModel("gemini-pro")
+    response = model.generate_content(f"Analyze this:\n{summary}")
 
-    print("📤 Sending data to Gemini...")
-    insights = get_insights(prompt)
-    print("\n📊 Insights Generated:\n")
-    print(insights)
+    return JSONResponse({
+        "top_expenses": top_expenses.to_dict(),
+        "ai_summary": response.text
+    })
