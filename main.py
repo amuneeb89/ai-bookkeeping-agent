@@ -5,7 +5,7 @@ import io
 import os
 import google.generativeai as genai
 
-# Load Gemini API Key
+# Configure Gemini with your environment variable
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 app = FastAPI()
@@ -16,19 +16,30 @@ async def analyze(file: UploadFile = File(...)):
         contents = await file.read()
         df = pd.read_csv(io.BytesIO(contents))
 
-        if "Description" not in df.columns or "Amount" not in df.columns:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "CSV must contain 'Description' and 'Amount' columns."}
-            )
+        # Ensure required columns exist
+        if 'Category' not in df.columns or 'Amount' not in df.columns:
+            return JSONResponse(status_code=400, content={
+                "error": "CSV must include 'Category' and 'Amount' columns."
+            })
 
-        # Simple analysis
-        top_expenses = df.groupby("Description")["Amount"].sum().sort_values(ascending=True).head(3)
-        summary = "\n".join([f"{k}: ${v:.2f}" for k, v in top_expenses.items()])
+        # Ensure 'Amount' is numeric
+        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
 
-        # AI call
-        model = genai.GenerativeModel("gemini-pro")
-        response = model.generate_content(f"Analyze the following:\n{summary}")
+        # Perform simple analysis
+        top_expenses = (
+            df.groupby("Category")["Amount"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(3)
+        )
+
+        summary = "\n".join([f"{cat}: ${amt:.2f}" for cat, amt in top_expenses.items()])
+
+        # Use Gemini with the correct model name
+        model = genai.GenerativeModel(model_name="models/gemini-pro")
+        response = model.generate_content(
+            f"Here is a financial summary of the top spending categories:\n{summary}\n\nPlease provide insights or trends based on this data."
+        )
 
         return JSONResponse({
             "top_expenses": top_expenses.to_dict(),
@@ -36,8 +47,4 @@ async def analyze(file: UploadFile = File(...)):
         })
 
     except Exception as e:
-        print("❌ ERROR:", str(e))  # <--- This will print to Render logs
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Internal server error. Check server logs."}
-        )
+        return JSONResponse(status_code=500, content={"error": str(e)})
