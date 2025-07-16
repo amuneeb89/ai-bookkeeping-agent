@@ -1,51 +1,60 @@
-from fastapi import FastAPI, UploadFile, File
+import os
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import pandas as pd
-import io
-import os
-import google.generativeai as genai
-
-# Set Gemini API key
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+import requests
+from io import StringIO
 
 app = FastAPI()
 
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Environment variables (Render)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent"
+
 @app.get("/")
 def health_check():
-    return {"status": "OK"}
+    return {"status": "ok"}
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     try:
         contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents))
+        df = pd.read_csv(StringIO(contents.decode("utf-8")))
 
-        # Validate columns
-        if 'Category' not in df.columns or 'Amount' not in df.columns:
-            return JSONResponse(status_code=400, content={
-                "error": "CSV must contain 'Category' and 'Amount' columns."
-            })
+        summary = df.describe(include="all").to_string()
 
-        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+        prompt = f"Here is a financial summary of top spending categories:\n\n{summary}\n\nWhat insights can you provide?"
 
-        top_expenses = (
-            df.groupby("Category")["Amount"]
-            .sum()
-            .sort_values(ascending=False)
-            .head(3)
-        )
-
-        summary = "\n".join([f"{cat}: ${amt:.2f}" for cat, amt in top_expenses.items()])
-        prompt = f"""Here is a financial summary of top spending categories:\n\n{summary}\n\nWhat insights or trends can you share?"""
-
-        # FIX: Use latest Gemini Pro generation
-        model = genai.GenerativeModel("gemini-pro")
-        response = model.generate_content(prompt)
-
-        return {
-            "top_expenses": top_expenses.to_dict(),
-            "ai_summary": response.text
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt}
+                    ]
+                }
+            ]
         }
 
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": GOOGLE_API_KEY
+        }
+
+        response = requests.post(GEMINI_API_URL, headers=headers, json=payload)
+        response.raise_for_status()
+
+        gemini_reply = response.json()
+        ai_response = gemini_reply.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+
+        return JSONResponse(content={"insights": ai_response})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
