@@ -1,40 +1,65 @@
 import os
+import csv
+import json
+import tempfile
+import requests
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import pandas as pd
-import requests
-from io import StringIO
+from starlette.responses import JSONResponse
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
-# Enable CORS
+# Enable CORS (optional if you're testing locally or want open access)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # For public access; tighten for production
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Environment variables (Render)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent"
+
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 @app.get("/")
-def health_check():
-    return {"status": "ok"}
+def read_root():
+    return {"status": "AI Bookkeeping Agent is live!"}
 
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
+async def analyze_csv(file: UploadFile = File(...)):
     try:
-        contents = await file.read()
-        df = pd.read_csv(StringIO(contents.decode("utf-8")))
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
 
-        summary = df.describe(include="all").to_string()
+        # Read CSV content
+        with open(tmp_path, mode='r', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            rows = list(reader)
+            header = rows[0]
+            sample = rows[1:6]  # take first 5 rows for context
 
-        prompt = f"Here is a financial summary of top spending categories:\n\n{summary}\n\nWhat insights can you provide?"
+        # Format sample for prompt
+        formatted_sample = "\n".join([", ".join(row) for row in sample])
+        prompt = (
+            f"You're an AI Bookkeeping Assistant.\n\n"
+            f"Here is a sample of the bookkeeping data:\n\n"
+            f"{', '.join(header)}\n{formatted_sample}\n\n"
+            f"Please provide a few insights from this data and suggest what a business owner should know."
+        )
 
-        payload = {
+        # Prepare payload for Gemini API
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": GOOGLE_API_KEY,
+        }
+
+        body = {
             "contents": [
                 {
                     "parts": [
@@ -44,17 +69,13 @@ async def analyze(file: UploadFile = File(...)):
             ]
         }
 
-        headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": GOOGLE_API_KEY
-        }
-
-        response = requests.post(GEMINI_API_URL, headers=headers, json=payload)
+        response = requests.post(GEMINI_API_URL, headers=headers, json=body)
         response.raise_for_status()
 
-        gemini_reply = response.json()
-        ai_response = gemini_reply.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        result = response.json()
+        ai_text = result["candidates"][0]["content"]["parts"][0]["text"]
 
-        return JSONResponse(content={"insights": ai_response})
+        return JSONResponse(content={"insights": ai_text})
+
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
