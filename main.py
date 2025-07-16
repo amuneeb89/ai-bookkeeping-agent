@@ -5,9 +5,11 @@ import io
 import os
 import google.generativeai as genai
 
-# Correct configuration
+# ✅ Load your actual Gemini API key (should be set in Render's env vars)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-pro")  # ✅ No "models/" prefix
+
+# ✅ Use supported model properly
+model = genai.GenerativeModel("gemini-pro")
 
 app = FastAPI()
 
@@ -17,20 +19,27 @@ async def analyze(file: UploadFile = File(...)):
         contents = await file.read()
         df = pd.read_csv(io.BytesIO(contents))
 
-        # Validation
-        if 'Category' not in df.columns or 'Amount' not in df.columns:
+        # Validate columns
+        if "Category" not in df.columns or "Amount" not in df.columns:
             return JSONResponse(status_code=400, content={
                 "error": "CSV must include 'Category' and 'Amount' columns."
             })
 
-        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+        # Coerce Amount to numeric
+        df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
+
+        # Top 3 categories
         top_expenses = df.groupby("Category")["Amount"].sum().sort_values(ascending=False).head(3)
         summary = "\n".join([f"{cat}: ${amt:.2f}" for cat, amt in top_expenses.items()])
 
-        # Generate response using Gemini
-        response = model.generate_content(
-            f"Here is a financial summary of the top spending categories:\n{summary}\n\nPlease provide insights or trends based on this data."
-        )
+        # Gemini prompt
+        prompt = f"""Here is a summary of top spending:
+{summary}
+
+Please generate insights based on this breakdown.
+"""
+
+        response = model.generate_content(prompt)
 
         return JSONResponse({
             "top_expenses": top_expenses.to_dict(),
