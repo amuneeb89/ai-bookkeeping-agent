@@ -12,39 +12,39 @@ load_dotenv()
 
 app = FastAPI()
 
-# Enable CORS (optional if you're testing locally or want open access)
+# Enable CORS (open access for testing)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For public access; tighten for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 @app.get("/")
 def read_root():
     return {"status": "AI Bookkeeping Agent is live!"}
 
+@app.get("/analyze/health")
+def health_check():
+    return {"status": "ok"}
+
 @app.post("/analyze")
 async def analyze_csv(file: UploadFile = File(...)):
     try:
-        # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
 
-        # Read CSV content
         with open(tmp_path, mode='r', encoding='utf-8') as csvfile:
             reader = csv.reader(csvfile)
             rows = list(reader)
             header = rows[0]
-            sample = rows[1:6]  # take first 5 rows for context
+            sample = rows[1:6]
 
-        # Format sample for prompt
         formatted_sample = "\n".join([", ".join(row) for row in sample])
         prompt = (
             f"You're an AI Bookkeeping Assistant.\n\n"
@@ -53,7 +53,6 @@ async def analyze_csv(file: UploadFile = File(...)):
             f"Please provide a few insights from this data and suggest what a business owner should know."
         )
 
-        # Prepare payload for Gemini API
         headers = {
             "Content-Type": "application/json",
             "x-goog-api-key": GOOGLE_API_KEY,
@@ -62,16 +61,13 @@ async def analyze_csv(file: UploadFile = File(...)):
         body = {
             "contents": [
                 {
-                    "parts": [
-                        {"text": prompt}
-                    ]
+                    "parts": [{"text": prompt}]
                 }
             ]
         }
 
         response = requests.post(GEMINI_API_URL, headers=headers, json=body)
         response.raise_for_status()
-
         result = response.json()
         ai_text = result["candidates"][0]["content"]["parts"][0]["text"]
 

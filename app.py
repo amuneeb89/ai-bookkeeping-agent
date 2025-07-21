@@ -10,7 +10,7 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # ─── Init Gemini LLM ──────────────────────────────────────────────────────
-llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=GOOGLE_API_KEY)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro", google_api_key=GOOGLE_API_KEY)
 
 # ─── Streamlit UI ─────────────────────────────────────────────────────────
 st.set_page_config(page_title="AI Bookkeeping Insights")
@@ -22,17 +22,19 @@ if uploaded_file:
     st.subheader("CSV Preview")
     st.dataframe(df.head())
 
-    # Convert CSV to plain text
     csv_text = df.to_csv(index=False)
 
     prompt = (
-        "You are a bookkeeping assistant. Look at this CSV data and give me key financial "
-        "insights, flags, and next-step recommendations:\n\n" + csv_text
+        "You are a bookkeeping assistant. "
+        "Look at this CSV data and give me key financial insights, flags, "
+        "and next‐step recommendations:\n\n"
+        + csv_text
     )
+
     with st.spinner("Analyzing with AI…"):
-        # wrap your prompt in a HumanMessage
+        from langchain.schema import HumanMessage
         message = HumanMessage(content=prompt)
         resp = llm.predict_messages([message])
 
-    st.subheader("✍️ AI Insights")
+    st.subheader("✨ AI Insights")
     st.success(resp.content)
