@@ -1,5 +1,5 @@
 fastapi
-uvicorn[standard]
-pandas
-python-multipart
-google-generativeai>=0.3.2
+uvicorn
+requests
+python-dotenv
+stripe
