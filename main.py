@@ -1,64 +1,66 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
+import hmac
+import hashlib
+import base64
 
-# Load environment variables
+# Load environment variables from .env
 load_dotenv()
 
-# Initialize FastAPI app
+# FastAPI app instance
 app = FastAPI()
 
-# CORS configuration
+# CORS middleware config
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust if needed for production
+    allow_origins=["*"],  # Update with specific domains in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Example root endpoint
+# Health check or root route
 @app.get("/")
 async def root():
-    return {"message": "AI Bookkeeping Agent is live."}
+    return {"message": "AI Bookkeeping Agent is live!"}
 
 
-# ?? Analyze Route (placeholder logic)
+# Analyze endpoint (stubbed for future Gemini AI integration)
 @app.post("/analyze")
-async def analyze_bookkeeping():
-    # TODO: Add file processing + Gemini logic
-    return {"status": "Analysis complete."}
+async def analyze_endpoint():
+    # This is where you'll add file parsing + Gemini logic
+    return {"status": "Analysis completed (stub)"}
 
 
-# ?? LemonSqueezy Webhook Listener
-from fastapi import Request, Header
-import hmac
-import hashlib
-import base64
-
+# LemonSqueezy Webhook handler
 @app.post("/webhook/lemonsqueezy")
-async def lemonsqueezy_webhook(request: Request, x_signature: str = Header(None)):
+async def lemonsqueezy_webhook(
+    request: Request,
+    x_signature: str = Header(None)
+):
     secret = os.getenv("LEMON_WEBHOOK_SECRET")
+    if not secret:
+        return {"error": "Webhook secret missing from environment"}
+
+    # Read raw body to verify signature
     raw_body = await request.body()
 
+    # Compute expected signature
     expected_signature = base64.b64encode(
-        hmac.new(
-            secret.encode(),
-            msg=raw_body,
-            digestmod=hashlib.sha256
-        ).digest()
+        hmac.new(secret.encode(), raw_body, hashlib.sha256).digest()
     ).decode()
 
+    # Validate
     if not hmac.compare_digest(expected_signature, x_signature):
-        return {"error": "Invalid signature"}
+        return {"error": "Invalid webhook signature"}
 
     payload = await request.json()
-    event_type = payload.get("meta", {}).get("event_name", "unknown")
+    event = payload.get("meta", {}).get("event_name", "unknown")
     data = payload.get("data", {})
 
-    # Log or handle events
-    print(f"? Webhook received: {event_type}")
+    print(f"? Webhook received: {event}")
     print(data)
 
-    return {"status": "Webhook processed"}
+    return {"status": "Webhook received", "event": event}
