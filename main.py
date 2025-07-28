@@ -1,51 +1,66 @@
-from fastapi import FastAPI, Request, Header, HTTPException
-import stripe
 import os
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+import requests
+import hmac
+import hashlib
+import base64
 
 load_dotenv()
 
-app = FastAPI()
+app = Flask(__name__)
 
-# Load Stripe secret key and webhook secret
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+LEMON_WEBHOOK_SECRET = os.getenv("LEMON_WEBHOOK_SECRET")
+LEMON_API_KEY = os.getenv("LEMON_API_KEY")
 
+@app.route('/')
+def home():
+    return "LemonSqueezy Webhook is live!"
 
-@app.get("/analyze/health")
-async def health_check():
-    return {"status": "ok"}
+@app.route('/webhook', methods=['POST'])
+def handle_webhook():
+    sig = request.headers.get('X-Signature')
+    payload = request.data
 
+    expected_sig = base64.b64encode(
+        hmac.new(
+            LEMON_WEBHOOK_SECRET.encode(),
+            payload,
+            hashlib.sha256
+        ).digest()
+    ).decode()
 
-@app.post("/webhook")
-async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
-    try:
-        payload = await request.body()
+    if sig != expected_sig:
+        return jsonify({'error': 'Invalid signature'}), 400
 
-        event = stripe.Webhook.construct_event(
-            payload, stripe_signature, STRIPE_WEBHOOK_SECRET
-        )
+    data = request.json
+    print("Webhook received:", data)
 
-        # Log event
-        print("?? Received event:", event["type"])
+    # Example: Handle subscription_created or license_validated
+    event_type = data.get('meta', {}).get('event_name', '')
+    if event_type == "order_created":
+        # Handle your logic (e.g., provisioning access, sending email, etc.)
+        print("New order received!")
+    
+    return jsonify({'status': 'success'}), 200
 
-        # Handle the event
-        if event["type"] == "payment_intent.succeeded":
-            print("? Payment succeeded.")
-        elif event["type"] == "invoice.paid":
-            print("? Invoice paid.")
-        else:
-            print(f"Unhandled event type {event['type']}")
+@app.route('/validate-license', methods=['POST'])
+def validate_license():
+    license_key = request.json.get('license_key')
 
-        return {"status": "success"}
+    response = requests.post(
+        'https://api.lemonsqueezy.com/v1/licenses/validate',
+        headers={
+            "Authorization": f"Bearer {LEMON_API_KEY}",
+            "Accept": "application/vnd.api+json"
+        },
+        json={"license_key": license_key}
+    )
 
-    except stripe.error.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid signature")
-    except Exception as e:
-        print("?? Webhook error:", e)
-        raise HTTPException(status_code=400, detail="Webhook error")
+    if response.status_code == 200:
+        return jsonify(response.json())
+    else:
+        return jsonify({'error': 'License validation failed'}), 400
 
-
-@app.get("/")
-async def root():
-    return {"message": "Stripe Webhook API is running"}
+if __name__ == '__main__':
+    app.run(debug=True)
